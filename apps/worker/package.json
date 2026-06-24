@@ -1,0 +1,27 @@
+{
+  "name": "@medium-publisher/worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@medium-publisher/ai": "workspace:*",
+    "@medium-publisher/database": "workspace:*",
+    "@medium-publisher/types": "workspace:*",
+    "axios": "^1.7.7",
+    "bullmq": "^5.34.6",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.4.1",
+    "winston": "^3.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.6.3"
+  }
+}

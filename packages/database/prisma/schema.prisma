@@ -1,0 +1,303 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================
+// ENUMS
+// =====================
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum TopicSource {
+  MANUAL
+  GOOGLE_TRENDS
+  REDDIT
+  HACKER_NEWS
+  TWITTER
+  DEV_TO
+  RSS
+}
+
+enum TopicStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum BlogMode {
+  TECHNICAL_DEEP_DIVE
+  TUTORIAL
+  OPINION_PIECE
+  CASE_STUDY
+  THOUGHT_LEADERSHIP
+  STARTUP_ANALYSIS
+}
+
+enum BlogTone {
+  PROFESSIONAL
+  CASUAL
+  FOUNDER
+  EDUCATOR
+  TECHNICAL_EXPERT
+}
+
+enum BlogStatus {
+  DRAFT
+  RESEARCHING
+  GENERATING
+  HUMANIZING
+  REVIEW
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+enum Platform {
+  MEDIUM
+}
+
+enum ScheduleStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum ImageStyle {
+  MINIMAL_PROFESSIONAL
+  TECHNICAL_FUTURISTIC
+  MODERN_STARTUP
+  THREE_D_ILLUSTRATION
+  CLEAN_INFOGRAPHIC
+  CINEMATIC_ABSTRACT
+}
+
+// =====================
+// MODELS
+// =====================
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String?
+  passwordHash      String?
+  role              Role      @default(USER)
+  mediumToken       String?   // Encrypted Medium integration token
+  mediumUserId      String?
+  mediumUsername    String?
+  avatar            String?
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  topics            Topic[]
+  blogs             Blog[]
+  playlists         Playlist[]
+
+  @@map("users")
+}
+
+model Topic {
+  id                String      @id @default(cuid())
+  title             String
+  description       String?     @db.Text
+  source            TopicSource @default(MANUAL)
+  popularityScore   Float       @default(0)
+  category          String?
+  keywordDifficulty Float       @default(0)
+  engagementScore   Float       @default(0)
+  keywords          String[]
+  status            TopicStatus @default(PENDING)
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  research          Research?
+  blogs             Blog[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@map("topics")
+}
+
+model Research {
+  id              String   @id @default(cuid())
+  topicId         String   @unique
+  topic           Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  whatIsIt        String   @db.Text
+  whyItMatters    String   @db.Text
+  currentTrends   String   @db.Text
+  statistics      Json     @default("[]")
+  realExamples    Json     @default("[]")
+  faqs            Json     @default("[]")
+  gaps            String[] @default([])
+  references      Json     @default("[]")
+  contrarian      String?  @db.Text
+  competingUrls   String[] @default([])
+  keyInsights     String[] @default([])
+  rawNotes        String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("research")
+}
+
+model Blog {
+  id                  String     @id @default(cuid())
+  title               String
+  subtitle            String?
+  slug                String     @unique
+  content             String     @db.Text
+  markdownContent     String     @db.Text
+  metaDescription     String?
+  tags                String[]   @default([])
+  category            String?
+  mode                BlogMode   @default(TECHNICAL_DEEP_DIVE)
+  tone                BlogTone   @default(PROFESSIONAL)
+  status              BlogStatus @default(DRAFT)
+  wordCount           Int        @default(0)
+  readTimeMinutes     Float      @default(0)
+  complexityScore     Float      @default(0)
+  // AI Quality Metrics
+  aiProbabilityScore  Float?
+  burstinessScore     Float?
+  repetitionScore     Float?
+  lexicalRichness     Float?
+  readabilityScore    Float?
+  // SEO
+  focusKeyword        String?
+  internalLinkSuggestions Json  @default("[]")
+  outline             Json?
+  // Cover Image
+  coverImageUrl       String?
+  coverImagePrompts   Json       @default("[]")
+  coverImageVariants  Json       @default("[]")
+  // Relations
+  topicId             String?
+  topic               Topic?     @relation(fields: [topicId], references: [id])
+  userId              String
+  user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions            BlogVersion[]
+  publishedPost       PublishedPost?
+  analytics           Analytics[]
+  playlists           PlaylistBlog[]
+  schedules           Schedule[]
+  sourceLinks         InternalLink[] @relation("SourceBlog")
+  targetLinks         InternalLink[] @relation("TargetBlog")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("blogs")
+}
+
+model BlogVersion {
+  id              String   @id @default(cuid())
+  blogId          String
+  blog            Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  content         String   @db.Text
+  markdownContent String   @db.Text
+  version         Int
+  changeNote      String?
+  wordCount       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@unique([blogId, version])
+  @@map("blog_versions")
+}
+
+model PublishedPost {
+  id            String    @id @default(cuid())
+  blogId        String    @unique
+  blog          Blog      @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  mediumId      String?
+  mediumUrl     String?
+  mediumSlug    String?
+  publishedAt   DateTime  @default(now())
+  platform      Platform  @default(MEDIUM)
+  createdAt     DateTime  @default(now())
+
+  @@map("published_posts")
+}
+
+model Analytics {
+  id            String   @id @default(cuid())
+  blogId        String
+  blog          Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  views         Int      @default(0)
+  reads         Int      @default(0)
+  readRatio     Float    @default(0)
+  claps         Int      @default(0)
+  followers     Int      @default(0)
+  earnings      Float    @default(0)
+  date          DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@map("analytics")
+}
+
+model Playlist {
+  id              String         @id @default(cuid())
+  title           String
+  description     String?        @db.Text
+  coverImage      String?
+  category        String?
+  isPublished     Boolean        @default(false)
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  blogs           PlaylistBlog[]
+  totalReadTime   Float          @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("playlists")
+}
+
+model PlaylistBlog {
+  id          String   @id @default(cuid())
+  playlistId  String
+  playlist    Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  blogId      String
+  blog        Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  order       Int
+  createdAt   DateTime @default(now())
+
+  @@unique([playlistId, blogId])
+  @@map("playlist_blogs")
+}
+
+model Schedule {
+  id            String         @id @default(cuid())
+  blogId        String
+  blog          Blog           @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  scheduledAt   DateTime
+  status        ScheduleStatus @default(PENDING)
+  publishedAt   DateTime?
+  errorMessage  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("schedules")
+}
+
+model InternalLink {
+  id            String  @id @default(cuid())
+  sourceBlogId  String
+  sourceBlog    Blog    @relation("SourceBlog", fields: [sourceBlogId], references: [id], onDelete: Cascade)
+  targetBlogId  String
+  targetBlog    Blog    @relation("TargetBlog", fields: [targetBlogId], references: [id], onDelete: Cascade)
+  anchorText    String
+  context       String? @db.Text
+
+  @@map("internal_links")
+}

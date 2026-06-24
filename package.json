@@ -1,0 +1,29 @@
+{
+  "name": "medium-auto-publisher",
+  "private": true,
+  "version": "1.0.0",
+  "description": "AI-Powered Medium Blog Automation Platform",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "db:generate": "pnpm --filter @medium-publisher/database db:generate",
+    "db:migrate": "pnpm --filter @medium-publisher/database db:migrate",
+    "db:studio": "pnpm --filter @medium-publisher/database db:studio",
+    "db:seed": "pnpm --filter @medium-publisher/database db:seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.9.0",
+    "prettier": "^3.3.3",
+    "eslint": "^9.15.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
