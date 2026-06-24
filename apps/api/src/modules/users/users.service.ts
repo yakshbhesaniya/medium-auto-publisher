@@ -72,19 +72,19 @@ export class UsersService {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { mediumToken: encryptedToken },
+      data: { mediumCookies: encryptedToken },
     });
   }
 
   async getMediumToken(userId: string): Promise<string | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { mediumToken: true },
+      select: { mediumCookies: true },
     });
 
-    if (!user?.mediumToken) return null;
+    if (!user?.mediumCookies) return null;
 
-    return this.decrypt(user.mediumToken);
+    return this.decrypt(user.mediumCookies);
   }
 
   async getPublicProfile(userId: string) {
@@ -92,7 +92,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    const { passwordHash, mediumToken, ...profile } = user as any;
+    const { passwordHash, mediumCookies, ...profile } = user as any;
     return profile;
   }
 

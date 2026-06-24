@@ -17,6 +17,7 @@ export interface TopicFilters {
   limit?: number;
   search?: string;
   status?: string;
+  isTrending?: boolean;
 }
 
 const apiClient = axios.create({
@@ -53,6 +54,7 @@ export const api = {
     reject: async (id: string) => (await apiClient.patch(`/topics/${id}/reject`)).data,
     triggerResearch: async (id: string) => (await apiClient.post(`/topics/${id}/research`)).data,
     triggerGenerate: async (id: string, opts?: any) => (await apiClient.post(`/topics/${id}/generate`, opts)).data,
+    generateProposed: async (id: string, index: number, opts?: any) => (await apiClient.post(`/topics/${id}/generate-proposed`, { proposedBlogIndex: index, ...opts })).data,
   },
   blogs: {
     list: async (params?: any) => (await apiClient.get('/blogs', { params })).data,

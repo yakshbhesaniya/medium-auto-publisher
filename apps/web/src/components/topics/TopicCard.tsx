@@ -10,6 +10,7 @@ import {
   Tag,
   ExternalLink,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useApproveTopic, useRejectTopic, useTriggerResearch, useTriggerGenerate } from '@/hooks/useTopics';
 import { getStatusBg, truncate } from '@/lib/utils';
 
@@ -179,9 +180,9 @@ export default function TopicCard({ topic }: { topic: Topic }) {
           {generate.isPending ? 'Generating...' : 'Generate'}
         </motion.button>
 
-        <button className="ml-auto p-1.5 rounded-lg text-zinc-500 hover:text-violet-400 hover:bg-violet-500/10 transition-all">
+        <Link href={`/topics/${topic.id}`} className="ml-auto p-1.5 rounded-lg text-zinc-500 hover:text-violet-400 hover:bg-violet-500/10 transition-all">
           <ExternalLink className="w-3.5 h-3.5" />
-        </button>
+        </Link>
       </div>
     </div>
   );

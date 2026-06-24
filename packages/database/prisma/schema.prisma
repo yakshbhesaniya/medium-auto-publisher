@@ -95,7 +95,7 @@ model User {
   name              String?
   passwordHash      String?
   role              Role      @default(USER)
-  mediumToken       String?   // Encrypted Medium integration token
+  mediumCookies     String?   @db.Text // Encrypted Playwright session cookies
   mediumUserId      String?
   mediumUsername    String?
   avatar            String?
@@ -122,6 +122,8 @@ model Topic {
   keywords          String[]
   status            TopicStatus @default(PENDING)
   userId            String
+  isTrending        Boolean     @default(false)
+  proposedPlan      Json?
   user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   research          Research?
   blogs             Blog[]

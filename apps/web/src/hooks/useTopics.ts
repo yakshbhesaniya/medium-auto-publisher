@@ -127,3 +127,20 @@ export function useTriggerGenerate() {
     },
   });
 }
+
+export function useGenerateProposedBlog() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, index, opts }: { id: string; index: number; opts?: Record<string, unknown> }) =>
+      api.topics.generateProposed(id, index, opts),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['topics'] });
+      queryClient.invalidateQueries({ queryKey: ['blogs'] });
+      toast.success('Proposed blog generation started! 🚀');
+    },
+    onError: (err: unknown) => {
+      const error = err as { message?: string };
+      toast.error(error?.message || 'Failed to generate proposed blog');
+    },
+  });
+}

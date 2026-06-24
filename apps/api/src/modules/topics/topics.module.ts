@@ -8,6 +8,7 @@ import { TopicsController } from './topics.controller';
     BullModule.registerQueue(
       { name: 'research-queue' },
       { name: 'blog-gen-queue' },
+      { name: 'evaluation-queue' },
     ),
   ],
   providers: [TopicsService],

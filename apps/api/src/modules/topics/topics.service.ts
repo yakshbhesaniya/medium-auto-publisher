@@ -18,6 +18,7 @@ export interface TopicListQuery {
   search?: string;
   status?: string;
   category?: string;
+  isTrending?: boolean;
 }
 
 @Injectable()
@@ -28,9 +29,10 @@ export class TopicsService {
     private readonly prisma: PrismaService,
     @InjectQueue('research-queue') private readonly researchQueue: Queue,
     @InjectQueue('blog-gen-queue') private readonly blogGenQueue: Queue,
+    @InjectQueue('evaluation-queue') private readonly evaluationQueue: Queue,
   ) {}
 
-  async findAll(userId: string, query: TopicListQuery) {
+  async findAll(userId: string, query: TopicListQuery): Promise<any> {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 10;
     const skip = (page - 1) * limit;
@@ -50,6 +52,10 @@ export class TopicsService {
 
     if (query.category) {
       where.category = { contains: query.category, mode: 'insensitive' };
+    }
+
+    if (query.isTrending !== undefined) {
+      where.isTrending = query.isTrending === true || String(query.isTrending) === 'true';
     }
 
     const [topics, total] = await this.prisma.$transaction([
@@ -97,8 +103,8 @@ export class TopicsService {
     return topic;
   }
 
-  async create(userId: string, dto: CreateTopicDto) {
-    return this.prisma.topic.create({
+  async create(userId: string, dto: CreateTopicDto): Promise<any> {
+    const topic = await this.prisma.topic.create({
       data: {
         title: dto.title,
         description: dto.description,
@@ -108,9 +114,14 @@ export class TopicsService {
         userId,
       },
     });
+
+    // Automatically queue it for evaluation (Playlist vs Single Blog)
+    await this.evaluationQueue.add('evaluate-topic', { topicId: topic.id, userId });
+
+    return topic;
   }
 
-  async update(id: string, userId: string, dto: UpdateTopicDto) {
+  async update(id: string, userId: string, dto: UpdateTopicDto): Promise<any> {
     await this.findOne(id, userId);
 
     return this.prisma.topic.update({
@@ -132,7 +143,7 @@ export class TopicsService {
     return { message: 'Topic deleted successfully' };
   }
 
-  async approve(id: string, userId: string) {
+  async approve(id: string, userId: string): Promise<any> {
     await this.findOne(id, userId);
     return this.prisma.topic.update({
       where: { id },
@@ -140,7 +151,7 @@ export class TopicsService {
     });
   }
 
-  async reject(id: string, userId: string) {
+  async reject(id: string, userId: string): Promise<any> {
     await this.findOne(id, userId);
     return this.prisma.topic.update({
       where: { id },
@@ -205,5 +216,94 @@ export class TopicsService {
 
     this.logger.log(`Blog gen job ${job.id} queued for topic ${topicId}`);
     return { message: 'Blog generation started', jobId: job.id };
+  }
+
+  async generateProposedBlog(
+    topicId: string,
+    userId: string,
+    blogIndex: number,
+    options: { mode?: any; tone?: any },
+  ) {
+    const topic = await this.findOne(topicId, userId);
+
+    if (!topic.proposedPlan || !topic.proposedPlan.blogs || !topic.proposedPlan.blogs[blogIndex]) {
+      throw new BadRequestException('Invalid proposed blog index');
+    }
+
+    if (!topic.research) {
+      throw new BadRequestException('Topic must be researched before generating blogs. Please trigger research first.');
+    }
+
+    const proposedBlog = topic.proposedPlan.blogs[blogIndex];
+    const planType = topic.proposedPlan.type;
+
+    const blogTitle = proposedBlog.title;
+    let blog = await this.prisma.blog.findFirst({
+      where: { topicId, title: blogTitle, userId },
+    });
+
+    if (!blog) {
+      const slugify = (await import('slugify')).default;
+      blog = await this.prisma.blog.create({
+        data: {
+          title: blogTitle,
+          subtitle: proposedBlog.description,
+          slug: slugify(blogTitle, { lower: true, strict: true }) + '-' + Date.now(),
+          content: '',
+          markdownContent: '',
+          topicId,
+          userId,
+        },
+      });
+
+      if (planType === 'PLAYLIST' && topic.proposedPlan.playlistTitle) {
+        let playlist = await this.prisma.playlist.findFirst({
+          where: { title: topic.proposedPlan.playlistTitle, userId },
+        });
+
+        if (!playlist) {
+          playlist = await this.prisma.playlist.create({
+            data: {
+              title: topic.proposedPlan.playlistTitle,
+              userId,
+            },
+          });
+        }
+
+        const existingLink = await this.prisma.playlistBlog.findUnique({
+          where: { playlistId_blogId: { playlistId: playlist.id, blogId: blog.id } },
+        });
+
+        if (!existingLink) {
+          await this.prisma.playlistBlog.create({
+            data: {
+              playlistId: playlist.id,
+              blogId: blog.id,
+              order: blogIndex + 1,
+            },
+          });
+        }
+      }
+    }
+
+    const job = await this.blogGenQueue.add(
+      'generate-blog',
+      {
+        topicId,
+        blogId: blog.id,
+        mode: options.mode || 'TECHNICAL_DEEP_DIVE',
+        tone: options.tone || 'PROFESSIONAL',
+        userId,
+      },
+      {
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 10000 },
+        removeOnComplete: 100,
+        removeOnFail: 50,
+      },
+    );
+
+    this.logger.log(`Blog gen job ${job.id} queued for proposed blog ${blog.id}`);
+    return { message: 'Proposed blog generation started', jobId: job.id, blogId: blog.id };
   }
 }

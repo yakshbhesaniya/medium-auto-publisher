@@ -1,9 +1,12 @@
 import { Worker, Job } from 'bullmq';
 import { prisma } from '@medium-publisher/database';
-import axios from 'axios';
 import { getRedisConnection } from '../utils/redis';
 import { logger } from '../utils/logger';
-import { createDecipheriv, createCipheriv, randomBytes, scryptSync } from 'crypto';
+import { createDecipheriv, scryptSync } from 'crypto';
+import { chromium } from 'playwright-extra';
+import stealth from 'puppeteer-extra-plugin-stealth';
+
+chromium.use(stealth());
 
 interface PublishJobData {
   blogId: string;
@@ -12,8 +15,7 @@ interface PublishJobData {
   publishStatus?: 'public' | 'draft' | 'unlisted';
 }
 
-// Decrypt Medium token stored in DB
-function decryptToken(encryptedToken: string): string {
+function decryptCookies(encryptedToken: string): string {
   const key = scryptSync(process.env.ENCRYPTION_KEY ?? 'default-key-change-me', 'salt', 32);
   const [ivHex, encrypted] = encryptedToken.split(':');
   const iv = Buffer.from(ivHex, 'hex');
@@ -26,82 +28,110 @@ export function startPublishWorker(): Worker {
     'publish-queue',
     async (job: Job<PublishJobData>) => {
       const { blogId, userId, scheduleId, publishStatus = 'public' } = job.data;
-      logger.info(`[PublishWorker] Publishing blog ${blogId} to Medium`);
+      logger.info(`[PublishWorker] Publishing blog ${blogId} to Medium via Playwright`);
 
+      let browser;
       try {
-        // Fetch blog
         const blog = await prisma.blog.findUniqueOrThrow({ where: { id: blogId } });
-
-        // Fetch user with encrypted Medium token
         const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
 
-        if (!user.mediumToken) {
-          throw new Error('No Medium integration token found. Please add your token in Settings.');
+        if (!user.mediumCookies) {
+          throw new Error('No Medium session cookies found. Please run the login script first.');
         }
 
-        // Decrypt the Medium token
-        const mediumToken = user.mediumToken.includes(':')
-          ? decryptToken(user.mediumToken)
-          : user.mediumToken;
+        const cookiesJson = decryptCookies(user.mediumCookies);
+        const cookies = JSON.parse(cookiesJson);
 
-        // Step 1: Get Medium user ID
-        const meResponse = await axios.get('https://api.medium.com/v1/me', {
-          headers: {
-            Authorization: `Bearer ${mediumToken}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
+        logger.info(`[PublishWorker] Launching headless browser...`);
+        browser = await chromium.launch({ headless: true });
+        
+        const context = await browser.newContext({
+          permissions: ['clipboard-read', 'clipboard-write'],
+          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         });
+        
+        await context.addCookies(cookies);
+        const page = await context.newPage();
 
-        const mediumUserId = meResponse.data.data.id;
+        logger.info(`[PublishWorker] Navigating to Medium editor...`);
+        await page.goto('https://medium.com/new-story', { waitUntil: 'domcontentloaded' });
+        
+        // Ensure we are logged in (if it redirects to signin, cookies are expired)
+        if (page.url().includes('signin')) {
+           throw new Error('Medium session expired. Please re-run the login script.');
+        }
 
-        // Step 2: Publish the post via official Medium API
-        // Using markdown format — Medium accepts HTML and markdown
-        const publishResponse = await axios.post(
-          `https://api.medium.com/v1/users/${mediumUserId}/posts`,
-          {
-            title: blog.title,
-            contentFormat: 'markdown',
-            content: blog.markdownContent,
-            tags: blog.tags.slice(0, 5), // Medium allows max 5 tags
-            publishStatus,
-            notifyFollowers: publishStatus === 'public',
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${mediumToken}`,
-              'Content-Type': 'application/json',
-              Accept: 'application/json',
-            },
-          },
-        );
+        logger.info(`[PublishWorker] Injecting content...`);
+        
+        // Wait for the editor to load
+        await page.waitForSelector('[data-default-value="Title"]', { timeout: 15000 });
+        
+        // Fill title
+        await page.fill('[data-default-value="Title"]', blog.title);
+        await page.keyboard.press('Enter');
+        
+        // Copy markdown content to clipboard
+        await page.evaluate(async (text) => {
+          await (navigator as any).clipboard.writeText(text);
+        }, blog.markdownContent);
 
-        const mediumPost = publishResponse.data.data;
+        // Paste it (Medium handles markdown pasting automatically)
+        const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+        await page.keyboard.press(`${modifier}+V`);
+        
+        // Wait for it to paste and auto-save
+        await page.waitForTimeout(5000);
+
+        if (publishStatus === 'public') {
+          logger.info(`[PublishWorker] Clicking Publish...`);
+          // Click the top "Publish" button to open the tag dialog
+          await page.click('button:has-text("Publish")');
+          
+          // Wait for the tag input to appear
+          const tagInputSelector = 'input[placeholder="Add a tag..."]';
+          await page.waitForSelector(tagInputSelector, { timeout: 10000 }).catch(() => null);
+          
+          // Add tags
+          for (const tag of blog.tags.slice(0, 5)) {
+            await page.fill(tagInputSelector, tag);
+            await page.keyboard.press('Enter');
+            await page.waitForTimeout(500);
+          }
+
+          // Click the final "Publish now" button
+          await page.click('button:has-text("Publish now")');
+          
+          logger.info(`[PublishWorker] Waiting for publication...`);
+          // Wait for the navigation to the published article
+          await page.waitForNavigation({ timeout: 30000 });
+        } else {
+          // Just save as draft
+          logger.info(`[PublishWorker] Saved as Draft.`);
+        }
+
+        const mediumUrl = page.url();
+        logger.info(`[PublishWorker] ✅ Successfully published! URL: ${mediumUrl}`);
 
         // Save published post record
         await prisma.publishedPost.upsert({
           where: { blogId },
           create: {
             blogId,
-            mediumId: mediumPost.id,
-            mediumUrl: mediumPost.url,
-            mediumSlug: mediumPost.url.split('/').pop() ?? '',
+            mediumUrl: mediumUrl,
+            mediumSlug: mediumUrl.split('/').pop() ?? '',
             platform: 'MEDIUM',
           },
           update: {
-            mediumId: mediumPost.id,
-            mediumUrl: mediumPost.url,
+            mediumUrl: mediumUrl,
             publishedAt: new Date(),
           },
         });
 
-        // Update blog status
         await prisma.blog.update({
           where: { id: blogId },
-          data: { status: 'PUBLISHED' },
+          data: { status: publishStatus === 'public' ? 'PUBLISHED' : 'DRAFT' },
         });
 
-        // Update schedule if exists
         if (scheduleId) {
           await prisma.schedule.update({
             where: { id: scheduleId },
@@ -109,15 +139,13 @@ export function startPublishWorker(): Worker {
           });
         }
 
-        // Create initial analytics record
         await prisma.analytics.create({
           data: { blogId, views: 0, reads: 0, readRatio: 0, earnings: 0 },
         }).catch(() => {});
 
-        logger.info(`[PublishWorker] ✅ Blog ${blogId} published to Medium: ${mediumPost.url}`);
-        return { success: true, mediumUrl: mediumPost.url };
+        return { success: true, mediumUrl };
       } catch (error: any) {
-        logger.error(`[PublishWorker] ❌ Failed to publish blog ${blogId}:`, error.message);
+        logger.error(`[PublishWorker] ❌ Failed to publish blog ${blogId}:`, error);
 
         if (scheduleId) {
           await prisma.schedule.update({
@@ -127,11 +155,15 @@ export function startPublishWorker(): Worker {
         }
 
         throw error;
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
       }
     },
     {
       connection: getRedisConnection(),
-      concurrency: 5,
+      concurrency: 2, // Playwright is heavy, keep concurrency low
     },
   );
 

@@ -8,7 +8,7 @@ import TopicCard from './TopicCard';
 import AddTopicModal from './AddTopicModal';
 import { cn } from '@/lib/utils';
 
-const STATUS_TABS = ['All', 'Pending', 'Approved', 'In Progress', 'Completed', 'Rejected'] as const;
+const STATUS_TABS = ['All', 'Trending', 'Pending', 'Approved', 'In Progress', 'Completed', 'Rejected'] as const;
 
 interface Topic {
   id: string;
@@ -27,9 +27,11 @@ export default function TopicsPage() {
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const statusFilter = activeTab === 'All' ? undefined : activeTab.toLowerCase().replace(' ', '_');
+  const isTrending = activeTab === 'Trending';
+  const statusFilter = activeTab === 'All' || activeTab === 'Trending' ? undefined : activeTab.toLowerCase().replace(' ', '_');
   const { data: topics, isLoading } = useTopics({
     status: statusFilter,
+    isTrending: isTrending ? true : undefined,
     search: search || undefined,
   });
 

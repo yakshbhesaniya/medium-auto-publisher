@@ -29,6 +29,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       { name: 'research-queue' },
       { name: 'blog-gen-queue' },
       { name: 'publish-queue' },
+      { name: 'evaluation-queue' },
+      { name: 'trending-queue' },
     ),
   ],
   exports: [BullModule],

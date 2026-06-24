@@ -29,6 +29,7 @@ export class TopicsController {
   @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'status', required: false, type: String })
   @ApiQuery({ name: 'category', required: false, type: String })
+  @ApiQuery({ name: 'isTrending', required: false, type: Boolean })
   async findAll(
     @CurrentUser('id') userId: string,
     @Query('page') page?: number,
@@ -36,8 +37,9 @@ export class TopicsController {
     @Query('search') search?: string,
     @Query('status') status?: string,
     @Query('category') category?: string,
+    @Query('isTrending') isTrending?: boolean,
   ) {
-    return this.topicsService.findAll(userId, { page, limit, search, status, category });
+    return this.topicsService.findAll(userId, { page, limit, search, status, category, isTrending });
   }
 
   @Get(':id')
@@ -98,5 +100,16 @@ export class TopicsController {
     @Body() options: { mode?: string; tone?: string; blogId?: string },
   ) {
     return this.topicsService.triggerBlogGeneration(id, userId, options);
+  }
+
+  @Post(':id/generate-proposed')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Generate a specific proposed blog from the AI plan' })
+  async generateProposedBlog(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body() dto: { proposedBlogIndex: number; mode?: string; tone?: string },
+  ) {
+    return this.topicsService.generateProposedBlog(id, userId, dto.proposedBlogIndex, { mode: dto.mode, tone: dto.tone });
   }
 }

@@ -8,3 +8,4 @@ export * from './agents/editor.agent';
 export * from './agents/seo.agent';
 export * from './agents/image.agent';
 export * from './pipeline/blog-pipeline';
+export * from './agents/discovery.agent';

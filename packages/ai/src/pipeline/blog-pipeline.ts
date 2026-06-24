@@ -56,17 +56,29 @@ export class BlogPipeline {
   constructor(
     private onProgress?: ProgressCallback,
   ) {
-    // Use Claude for writing (best quality), OpenAI for fast tasks + images
-    const claude = new AnthropicProvider(process.env.AI_WRITING_MODEL ?? 'claude-sonnet-4-5');
-    const gpt = new OpenAIProvider(process.env.AI_FAST_MODEL ?? 'gpt-4o');
+    const getProvider = (stage: string, isFastTask: boolean = false) => {
+      const providerStr = process.env[`AI_PROVIDER_${stage.toUpperCase()}`]?.toLowerCase() || 'openai';
+      
+      if (providerStr === 'anthropic') {
+        const model = isFastTask 
+          ? (process.env.AI_FAST_MODEL_ANTHROPIC ?? 'claude-3-haiku-20240307')
+          : (process.env.AI_WRITING_MODEL_ANTHROPIC ?? 'claude-3-5-sonnet-20240620');
+        return new AnthropicProvider(model);
+      } else {
+        const model = isFastTask
+          ? (process.env.AI_FAST_MODEL_OPENAI ?? 'gpt-4o-mini')
+          : (process.env.AI_WRITING_MODEL_OPENAI ?? 'gpt-4o');
+        return new OpenAIProvider(model);
+      }
+    };
 
-    this.researchAgent = new ResearchAgent(gpt);      // GPT-4o fast for research
-    this.outlineAgent = new OutlineAgent(claude);      // Claude for creative outline
-    this.writerAgent = new WriterAgent(claude);        // Claude for best writing
-    this.humanizerAgent = new HumanizerAgent(claude);  // Claude for humanization
-    this.editorAgent = new EditorAgent(claude);        // Claude for editing
-    this.seoAgent = new SEOAgent(gpt);                // GPT-4o for SEO
-    this.imageAgent = new ImageAgent(new OpenAIProvider('gpt-4o')); // DALL-E for images
+    this.researchAgent = new ResearchAgent(getProvider('RESEARCH', true));
+    this.outlineAgent = new OutlineAgent(getProvider('OUTLINE', false));
+    this.writerAgent = new WriterAgent(getProvider('WRITING', false));
+    this.humanizerAgent = new HumanizerAgent(getProvider('HUMANIZING', false));
+    this.editorAgent = new EditorAgent(getProvider('EDITING', false));
+    this.seoAgent = new SEOAgent(getProvider('SEO', true));
+    this.imageAgent = new ImageAgent(new OpenAIProvider(process.env.DALLE_MODEL ?? 'dall-e-3'));
   }
 
   async run(
@@ -200,8 +212,12 @@ ${content}
   }
 
   private async ai_fallback_write(prompt: string): Promise<string> {
-    const claude = new AnthropicProvider();
-    return claude.generateText(prompt, { temperature: 0.8, maxTokens: 6000 });
+    const providerStr = process.env.AI_PROVIDER_WRITING?.toLowerCase() || 'openai';
+    const provider = providerStr === 'anthropic'
+      ? new AnthropicProvider(process.env.AI_WRITING_MODEL_ANTHROPIC ?? 'claude-3-5-sonnet-20240620')
+      : new OpenAIProvider(process.env.AI_WRITING_MODEL_OPENAI ?? 'gpt-4o');
+
+    return provider.generateText(prompt, { temperature: 0.8, maxTokens: 6000 });
   }
 
   private async progress(stage: PipelineStage, percent: number, message: string): Promise<void> {
