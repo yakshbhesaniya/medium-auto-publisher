@@ -140,6 +140,8 @@ ${forbiddenFound.length > 0 ? forbiddenFound.map(p => `   - "${p}"`).join('\n') 
 
 10. Keep all technical facts and information accurate — only improve the writing style.
 
+11. Should be look like 100% human written
+
 Return ONLY the rewritten content. No preamble, no explanation.`;
 
     const prompt = `Humanize this blog content. Make it read like an experienced human expert wrote it. Keep the markdown structure but improve everything else.
